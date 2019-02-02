@@ -21,6 +21,7 @@ import { asap, suspend, flush } from './scheduler'
 import { asEffect } from './io'
 import { stdChannel as _stdChannel, eventChannel, isEnd } from './channel'
 import { buffers } from './buffers'
+import { namespaceKey } from '../utils'
 
 export const NOT_ITERATOR_ERROR = 'proc first argument (Saga function result) must be an iterator'
 
@@ -461,7 +462,7 @@ export default function proc(
     channel = channel || stdChannel
     const takeCb = inp => (inp instanceof Error ? cb(inp, true) : isEnd(inp) && !maybe ? cb(CHANNEL_END) : cb(inp))
     try {
-      channel.take(takeCb, matcher(pattern))
+      channel.take(takeCb, namespaceFilter(pattern, matcher))
     } catch (err) {
       return cb(err, true)
     }
@@ -477,7 +478,7 @@ export default function proc(
     asap(() => {
       let result
       try {
-        result = (channel ? channel.put : dispatch)(action)
+        result = (channel ? channel.put : dispatch)(namespaceDecorate(action))
       } catch (error) {
         // If we have a channel or `put.resolve` was used then bubble up the error.
         if (channel || resolve) return cb(error, true)
@@ -503,7 +504,9 @@ export default function proc(
     }
     return is.promise(result)
       ? resolvePromise(result, cb)
-      : is.iterator(result) ? resolveIterator(result, effectId, fn.name, cb) : cb(result)
+      : is.iterator(result)
+      ? resolveIterator(result, effectId, fn.name, cb)
+      : cb(result)
   }
 
   function runCPSEffect({ context, fn, args }, cb) {
@@ -696,6 +699,32 @@ export default function proc(
   function runSetContextEffect(props, cb) {
     object.assign(taskContext, props)
     cb()
+  }
+
+  function getContext(prop) {
+    return taskContext[prop]
+  }
+
+  function namespaceDecorate(action) {
+    if (getContext(namespaceKey)) {
+      Object.defineProperty(action, namespaceKey, {
+        value: getContext(namespaceKey),
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      })
+    }
+    return action
+  }
+
+  function namespaceFilter(pattern, next) {
+    const nxt = next(pattern)
+    return action => {
+      if (getContext(namespaceKey) && Object.hasOwnProperty.call(action, namespaceKey)) {
+        if (getContext(namespaceKey) !== action[namespaceKey]) return false
+      }
+      return nxt(action)
+    }
   }
 
   function newTask(id, name, iterator, cont) {

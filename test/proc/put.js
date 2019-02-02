@@ -5,6 +5,7 @@ import * as io from '../../src/effects'
 import * as utils from '../../src/internal/utils'
 import { emitter, channel } from '../../src/internal/channel'
 import sagaMiddleware from '../../src'
+import { namespaceKey } from '../../src/utils'
 
 test('proc put handling', assert => {
   assert.plan(1)
@@ -178,4 +179,38 @@ test('puts emitted while dispatching saga need not to cause stack overflow', ass
     assert.ok(true, 'this saga needs to run without stack overflow')
     assert.end()
   })
+})
+
+test('puts in the url isolate context should dispatch action contain the url ', assert => {
+  const url = '/a/1'
+  const type = Math.random().toString()
+  assert.plan(4)
+
+  function* root() {
+    yield io.fork(runner, url + '>>>>')
+    yield io.fork(runner, url)
+  }
+  function* runner(url) {
+    yield io.setContext({
+      [namespaceKey]: url,
+    })
+    yield io.fork(page)
+    yield new Promise(resolve => setTimeout(resolve, 10))
+    yield io.put({ type })
+  }
+  function* page() {
+    const ur = yield io.getContext(namespaceKey)
+    const action = yield io.take(type)
+    assert.ok(action.hasOwnProperty(namespaceKey), 'action should contain namespace')
+
+    assert.equal(action[namespaceKey], ur, 'action should contain namespace equaling to ctx')
+  }
+
+  const reducer = (state, action) => action.type
+  const middleware = sagaMiddleware()
+  const store = createStore(reducer, applyMiddleware(middleware))
+
+  store.subscribe(() => {})
+
+  middleware.run(root)
 })
