@@ -21,7 +21,7 @@ import { asap, suspend, flush } from './scheduler'
 import { asEffect } from './io'
 import { stdChannel as _stdChannel, eventChannel, isEnd } from './channel'
 import { buffers } from './buffers'
-import { namespaceKey } from '../utils'
+import { namespaceKey, pageKey } from '../utils'
 
 export const NOT_ITERATOR_ERROR = 'proc first argument (Saga function result) must be an iterator'
 
@@ -709,6 +709,12 @@ export default function proc(
     if (getContext(namespaceKey)) {
       Object.defineProperty(action, namespaceKey, {
         value: getContext(namespaceKey),
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      })
+      Object.defineProperty(action, pageKey, {
+        value: getContext(pageKey),
         enumerable: false,
         configurable: false,
         writable: false,
